@@ -1,5 +1,4 @@
 import io
-import math
 import pandas as pd
 import matplotlib.pyplot as plt
 import streamlit as st
@@ -15,16 +14,14 @@ st.set_page_config(
 )
 
 # =========================
-# POLISH: GLOBAL CSS
+# POLISH: GLOBAL CSS (Apple-clean + playful accents)
 # =========================
 st.markdown(
     """
     <style>
-      /* App background + base typography */
+      /* App background + base typography (Apple-clean) */
       .stApp {
-        background: radial-gradient(1200px 600px at 20% 0%, rgba(70,130,255,0.12), transparent 50%),
-                    radial-gradient(900px 500px at 80% 10%, rgba(0,200,160,0.10), transparent 55%),
-                    #0b1020;
+        background: #0b1020;
         color: #e8eeff;
       }
 
@@ -52,11 +49,12 @@ st.markdown(
         margin-right: 6px;
       }
 
+      /* HERO TYPE: bigger + Apple-ish tight tracking */
       .wh-title {
-        font-size: 40px;
+        font-size: 48px;
         font-weight: 900;
-        letter-spacing: 0.5px;
-        margin-bottom: 0.2rem;
+        letter-spacing: -0.5px;
+        margin-bottom: 0.1rem;
       }
 
       .wh-sub {
@@ -79,7 +77,7 @@ st.markdown(
         overflow: hidden;
       }
 
-      /* Hide Streamlit footer */
+      /* Hide Streamlit footer/header */
       footer {visibility: hidden;}
       header {visibility: hidden;}
     </style>
@@ -110,8 +108,7 @@ def safe_str(x):
 
 def extract_user(description: str) -> str:
     """
-    Your rule: first word in Description is the user name.
-    If your exports differ later, we can swap this function.
+    House rule: first word in Description is the user name.
     """
     if not isinstance(description, str) or not description.strip():
         return "Unknown"
@@ -119,15 +116,13 @@ def extract_user(description: str) -> str:
 
 def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Tries to map common export column names into:
+    Maps common export column names into:
       Date, Description, Credits, Debits
     If a single Amount column exists, it will split into Credits/Debits.
     """
-    # Make a copy and standardize column names
     d = df.copy()
     d.columns = [c.strip() for c in d.columns]
 
-    # Common variants
     col_map = {}
     for c in d.columns:
         lc = c.lower()
@@ -144,18 +139,14 @@ def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
 
     d = d.rename(columns=col_map)
 
-    # Ensure required columns exist in some form
     if "Date" not in d.columns:
         raise ValueError("Could not find a Date column.")
     if "Description" not in d.columns:
-        # allow missing Description, but WHALER ranking needs it
         d["Description"] = ""
 
-    # Convert Date
     d["Date"] = pd.to_datetime(d["Date"], errors="coerce")
     d = d.dropna(subset=["Date"])
 
-    # If Credits/Debits missing but Amount exists, derive
     if ("Credits" not in d.columns or "Debits" not in d.columns) and "Amount" in d.columns:
         amt = d["Amount"].apply(money_to_float)
         d["Credits"] = amt.where(amt > 0, 0.0)
@@ -166,18 +157,15 @@ def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
         if "Debits" not in d.columns:
             d["Debits"] = 0.0
 
-    # Money
     d["Credits"] = d["Credits"].apply(money_to_float)
     d["Debits"] = d["Debits"].apply(money_to_float)
-
-    # Trim text
     d["Description"] = d["Description"].apply(safe_str)
 
     return d[["Date", "Description", "Credits", "Debits"]]
 
 def dedupe(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Your house rule: dedupe transactions across files by composite key:
+    House rule: dedupe transactions across files by composite key:
     Date + Description + Credits + Debits
     """
     d = df.copy()
@@ -191,12 +179,10 @@ def dedupe(df: pd.DataFrame) -> pd.DataFrame:
     return d
 
 def build_charts(df: pd.DataFrame, top3: list[str], top_user: str):
-    """Returns (pie_fig, stacked_fig) using matplotlib (no seaborn)."""
+    """Returns (pie_fig, stacked_fig) using matplotlib."""
 
     # PIE: % contribution of top 3 to total credits
-    total = float(df["Credits"].sum())
     top3_df = df[df["User"].isin(top3)].groupby("User", as_index=False)["Credits"].sum()
-    # Ensure ordering matches top3 list
     top3_df["User"] = pd.Categorical(top3_df["User"], categories=top3, ordered=True)
     top3_df = top3_df.sort_values("User")
     pie_vals = top3_df["Credits"].tolist()
@@ -211,9 +197,7 @@ def build_charts(df: pd.DataFrame, top3: list[str], top_user: str):
         ax.pie(pie_vals, labels=pie_labels, autopct="%1.1f%%", startangle=90)
         ax.set_title("Top 3 Whales: % of Total Earnings")
 
-    # STACKED BAR: for top single user (by type)
-    # We don't truly know categories (chat/video/gifts) from raw export;
-    # We'll infer a "Type" from keywords in Description as best-effort.
+    # STACKED BAR: for top single user (infer type from Description)
     d = df.copy()
     desc = d["Description"].str.lower()
     d["Type"] = "Other"
@@ -231,7 +215,6 @@ def build_charts(df: pd.DataFrame, top3: list[str], top_user: str):
         ax2.text(0.5, 0.5, "No data for top user.", ha="center", va="center")
         ax2.axis("off")
     else:
-        # stacked bars
         bottom = None
         for col in pivot.columns:
             if bottom is None:
@@ -262,13 +245,13 @@ def demo_data() -> pd.DataFrame:
     users = ["Victor", "Ossium", "Aaron", "Mike", "Sam", "Jay", "Chris", "Derek", "Nate", "Rob"]
     rows = []
     for day in rng:
-        for _ in range(20):
-            u = users[int(abs(hash((day, _))) % len(users))]
-            amt = float((abs(hash((u, day, _))) % 1800) / 10.0)  # 0.0 -> 179.9
-            kind = ["video", "chat", "gift", "other"][int(abs(hash((_, u))) % 4)]
+        for i in range(20):
+            u = users[int(abs(hash((day, i))) % len(users))]
+            amt = float((abs(hash((u, day, i))) % 1800) / 10.0)  # 0.0 -> 179.9
+            kind = ["video", "chat", "gift", "other"][int(abs(hash((i, u))) % 4)]
             rows.append(
                 {
-                    "Date": day + pd.Timedelta(hours=int(abs(hash((u, _))) % 20)),
+                    "Date": day + pd.Timedelta(hours=int(abs(hash((u, i))) % 20)),
                     "Description": f"{u} {kind} payment",
                     "Credits": amt,
                     "Debits": 0.0,
@@ -289,7 +272,7 @@ with st.sidebar:
         "<span class='wh-pill'>No logins</span>"
         "<span class='wh-pill'>Upload → Results</span>"
         "<div style='margin-top:10px; color: rgba(232,238,255,0.75); font-size: 13px;'>"
-        "Upload an earnings CSV → get instant insight in who’s really paying you."
+        "Upload an earnings report → get whale clarity in seconds."
         "</div>"
         "</div>",
         unsafe_allow_html=True,
@@ -306,7 +289,7 @@ colA, colB = st.columns([0.7, 0.3], gap="large")
 with colA:
     st.markdown("<div class='wh-title'>WHALER</div>", unsafe_allow_html=True)
     st.markdown(
-        "<div class='wh-sub'>Upload your earnings report → instantly see who’s really paying you.</div>",
+        "<div class='wh-sub'>Upload your earnings report → get whale clarity in seconds.</div>",
         unsafe_allow_html=True,
     )
 with colB:
@@ -356,7 +339,6 @@ if base_df is None:
     )
     st.stop()
 
-# Add derived fields
 df = base_df.copy()
 df["User"] = df["Description"].apply(extract_user)
 
@@ -364,7 +346,6 @@ total_credits = float(df["Credits"].sum())
 total_debits = float(df["Debits"].sum())
 net = total_credits - total_debits
 
-# Whale ranking
 rank = (
     df.groupby("User", as_index=False)["Credits"]
     .sum()
@@ -378,15 +359,18 @@ top10 = rank.head(10).copy()
 top_user = top3[0] if len(top3) else "Unknown"
 
 # =========================
-# HERO METRICS
+# HERO METRICS (Money psychology > accounting)
 # =========================
 m1, m2, m3, m4 = st.columns(4, gap="large")
 m1.metric("Total Earnings", f"${total_credits:,.2f}")
-m2.metric("Total Debits", f"${total_debits:,.2f}")
-m3.metric("Net", f"${net:,.2f}")
-m4.metric("Transactions (deduped)", f"{len(df):,}")
+m2.metric("Net Profit", f"${net:,.2f}")
+m3.metric("Transactions", f"{len(df):,}")
+m4.metric("Top Whale", top_user)
 
 st.write("")
+
+# Extra whitespace = premium
+st.markdown("<div style='margin-top: 30px;'></div>", unsafe_allow_html=True)
 
 # =========================
 # TOP WHALES + CHARTS
@@ -398,7 +382,6 @@ with left:
     st.markdown("#### 🏆 Whale Ranking (Top 10)")
     st.caption("Free shows Top 3. Ranks 4–10 can be blurred to push V2.")
 
-    # Create a display version with blur
     display = top10[["Rank", "User", "Credits"]].copy()
     display["Credits"] = display["Credits"].apply(lambda x: f"${x:,.2f}")
 
@@ -411,7 +394,7 @@ with left:
 
     st.markdown(
         "<div style='margin-top:10px; color:rgba(232,238,255,0.70); font-size:12px;'>"
-        "Upgrade idea: show ranks 4–10 + averages + filters + export reports."
+        "Upgrade idea: unblur 4–10 + averages + filters + export reports."
         "</div>",
         unsafe_allow_html=True,
     )
@@ -420,7 +403,7 @@ with left:
 with right:
     st.markdown("<div class='wh-card'>", unsafe_allow_html=True)
     st.markdown("#### 📊 Whale Impact")
-    st.caption("Pie: % of total from Top 3. Right below: daily breakdown for #1 whale.")
+    st.caption("Pie: % of total from Top 3. Below: daily breakdown for the #1 whale.")
 
     pie_fig, stacked_fig = build_charts(df, top3=top3, top_user=top_user)
 
@@ -435,18 +418,21 @@ with right:
 st.write("")
 
 # =========================
-# OPTIONAL: DOWNLOAD CLEANED / DEDUPED CSV
+# DOWNLOAD CLEANED / DEDUPED CSV
 # =========================
 st.markdown("<div class='wh-card'>", unsafe_allow_html=True)
 st.markdown("#### ⬇️ Download cleaned (deduped) data")
-st.caption("This is your “clean truth” file after the duplicate filter.")
+st.caption("This is your clean truth file after the duplicate filter.")
+
 out = df.copy()
 out["Date"] = out["Date"].dt.strftime("%Y-%m-%d %H:%M:%S")
 csv_bytes = out.to_csv(index=False).encode("utf-8")
+
 st.download_button(
     label="Download Deduped CSV",
     data=csv_bytes,
     file_name="WHALER_DEDUPED.csv",
     mime="text/csv",
 )
+
 st.markdown("</div>", unsafe_allow_html=True)
