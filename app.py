@@ -10,12 +10,22 @@ import streamlit as st
 
 st.set_page_config(page_title="WHALER", layout="wide")
 
+# ---------- Brand Palette (requested) ----------
+# blue, slightly less blue, green, aqua
+BRAND_COLORS = {
+    "blue": "#2F80ED",
+    "blue2": "#56A0FF",
+    "green": "#27AE60",
+    "aqua": "#2DDAE3",
+}
+STACK_COLORS = [BRAND_COLORS["blue"], BRAND_COLORS["blue2"], BRAND_COLORS["green"], BRAND_COLORS["aqua"]]
+
 # ---------- Premium CSS ----------
 st.markdown(
     """
 <style>
 #MainMenu, footer, header {visibility: hidden;}
-.block-container { padding-top: 1.6rem; padding-bottom: 3rem; max-width: 1200px; }
+.block-container { padding-top: 1.6rem; padding-bottom: 2.5rem; max-width: 1200px; }
 
 :root{
   --bg1:#07131f;
@@ -63,7 +73,6 @@ section[data-testid="stSidebar"] *{ color: rgba(255,255,255,0.86); }
   background: var(--card);
   box-shadow: 0 14px 40px rgba(0,0,0,0.35);
 }
-.card-tight{ padding: 14px 14px; }
 .hr{ height:1px; background: rgba(255,255,255,0.10); border:0; margin: 16px 0; }
 
 .small{ color: var(--muted); font-size: 0.92rem; }
@@ -127,13 +136,11 @@ def currency(x: float) -> str:
     return f"${x:,.2f}"
 
 def extract_user(description: str) -> str:
-    # First token from Description
     if not isinstance(description, str) or not description.strip():
         return "Unknown"
     return description.strip().split(" ")[0]
 
 def classify_type(description: str) -> str:
-    # Simple classifier from Description text
     s = str(description).lower()
     if "video" in s or "facetime" in s:
         return "Video"
@@ -163,17 +170,14 @@ def kpi_card(label, value, note=None):
     """
 
 def style_dark_axes(ax):
-    # Transparent backgrounds so the page gradient shows through
     ax.set_facecolor((0, 0, 0, 0))
     ax.figure.patch.set_facecolor((0, 0, 0, 0))
 
-    # Ticks/labels readable on dark background
     ax.tick_params(colors="white")
     ax.xaxis.label.set_color("white")
     ax.yaxis.label.set_color("white")
     ax.title.set_color("white")
 
-    # Subtle spines
     for spine in ax.spines.values():
         spine.set_color((1, 1, 1, 0.18))
 
@@ -198,7 +202,7 @@ def demo_df() -> pd.DataFrame:
 # ---------- Sidebar controls ----------
 with st.sidebar:
     st.markdown("### 🐋 WHALER")
-    st.markdown("<div class='tiny'>V1 — proof of demand. CSV upload → whales → core visuals.</div>", unsafe_allow_html=True)
+    st.markdown("<div class='tiny'>V1 — CSV upload → whales → clarity.</div>", unsafe_allow_html=True)
     st.markdown("<div style='margin-top:10px;'></div>", unsafe_allow_html=True)
 
     st.markdown("<span class='pill'>V1</span><span class='pill'>No logins</span><span class='pill'>Upload → Results</span>", unsafe_allow_html=True)
@@ -207,7 +211,7 @@ with st.sidebar:
     show_demo = st.toggle("Show Demo Data", value=False)
     blur_ranks = st.toggle("Blur ranks 4–10 (tease V2)", value=True)
 
-    st.markdown("<div class='tiny' style='margin-top:10px;'>Tip: Blurring is the upsell hook. Top 3 visible, 4–10 blurred.</div>", unsafe_allow_html=True)
+    st.markdown("<div class='tiny' style='margin-top:10px;'>Top 3 stays visible; 4–10 blurs to create a clean upgrade path.</div>", unsafe_allow_html=True)
 
 # ---------- Header ----------
 c1, c2 = st.columns([1, 8], vertical_alignment="center")
@@ -219,15 +223,15 @@ with c1:
 
 with c2:
     st.markdown("<div class='kicker'>CSV → Whale Clarity</div>", unsafe_allow_html=True)
-    st.markdown("<div class='hero'>Upload your earnings report.<br/>See who actually funds your income.</div>", unsafe_allow_html=True)
-    st.markdown("<div class='sub'>No logins • Privacy-first • Instant “holy shit” clarity</div>", unsafe_allow_html=True)
+    st.markdown("<div class='hero'>Upload your earnings report.<br/>See who funds your success.</div>", unsafe_allow_html=True)
+    st.markdown("<div class='sub'>Private • fast • built to make your next move obvious</div>", unsafe_allow_html=True)
 
 st.write("")
 
 # ---------- Upload ----------
 st.markdown("<div class='card'>", unsafe_allow_html=True)
 uploaded = None if show_demo else st.file_uploader("Drop your CSV here", type=["csv"])
-st.markdown("<div class='small'>Privacy-first: your CSV is processed in-session and not saved.</div>", unsafe_allow_html=True)
+st.markdown("<div class='small'>Your file is processed in-session and never stored.</div>", unsafe_allow_html=True)
 st.markdown("</div>", unsafe_allow_html=True)
 
 # ---------- Load data ----------
@@ -243,13 +247,11 @@ else:
 
 # ---------- Main app ----------
 if df is not None:
-    # Validate minimum columns
     required = {"Date", "Description", "Credits"}
     if not required.issubset(df.columns):
         st.error("CSV must include columns: Date, Description, Credits")
         st.stop()
 
-    # Normalize
     df = df.copy()
     df["amount"] = df["Credits"].apply(money_to_float)
     df["user"] = df["Description"].apply(extract_user)
@@ -258,14 +260,12 @@ if df is not None:
     df = df.dropna(subset=["dt"])
     df["day"] = df["dt"].dt.date
 
-    # Deduplicate: Date + Description + Credits + Debits (if present)
     df["dedupe_key"] = make_dedupe_key(df)
     pre = len(df)
     df = df.drop_duplicates("dedupe_key")
     post = len(df)
     removed = pre - post
 
-    # Key metrics
     total = float(df["amount"].sum())
     whales = df.groupby("user")["amount"].sum().sort_values(ascending=False)
     top10 = whales.head(10)
@@ -288,7 +288,6 @@ if df is not None:
     k2.markdown(kpi_card("Transactions", f"{transactions:,}"), unsafe_allow_html=True)
     k3.markdown(kpi_card("Total Whales", f"{total_whales:,}"), unsafe_allow_html=True)
     k4.markdown(kpi_card("Top 3 Share", f"{top3_pct:.0f}%"), unsafe_allow_html=True)
-
     st.markdown("</div>", unsafe_allow_html=True)
 
     st.write("")
@@ -300,7 +299,7 @@ if df is not None:
     with left:
         st.markdown("<div class='card'>", unsafe_allow_html=True)
         st.markdown("### 🏆 Whale Ranking (Top 10)")
-        st.markdown("<div class='tiny'>Free shows Top 3. Ranks 4–10 can be blurred to push V2.</div>", unsafe_allow_html=True)
+        st.markdown("<div class='tiny'>Your top supporters aren’t random — this is the short list that’s driving your totals.</div>", unsafe_allow_html=True)
         st.markdown("<hr class='hr'/>", unsafe_allow_html=True)
 
         if len(top10) == 0:
@@ -321,45 +320,58 @@ if df is not None:
             if blur_ranks:
                 st.markdown("<div class='lock'>🔒 Ranks 4–10 blurred (V2 tease)</div>", unsafe_allow_html=True)
 
-        st.markdown("<div class='tiny' style='margin-top:10px;'>Upgrade idea: unblur 4–10 + averages + filters + export reports.</div>", unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
 
     # =========================
-    # RIGHT: Whale Impact
+    # RIGHT: Whale Impact (bigger charts + brand colors)
     # =========================
     with right:
         st.markdown("<div class='card'>", unsafe_allow_html=True)
         st.markdown("### 📊 Whale Impact")
-        st.markdown("<div class='tiny'>Pie: % of total from Top 3. Bar: Top 3 breakdown by Chat/Video/Gifts/Other.</div>", unsafe_allow_html=True)
+        st.markdown("<div class='tiny'>This is the story: a small handful of people account for a large share of what you earned.</div>", unsafe_allow_html=True)
         st.markdown("<hr class='hr'/>", unsafe_allow_html=True)
 
-        # ---- Pie chart: Top 3 vs everyone else ----
-        pie_col, bar_col = st.columns([1, 1], gap="medium")
+        # Make charts larger by giving them more relative width and bigger figsize
+        pie_col, bar_col = st.columns([1.15, 1.45], gap="medium")
 
+        # ---- PIE: #1, #2, #3, Everyone else (4 cohesive colors)
         with pie_col:
-            fig_pie = plt.figure()
+            # Build 4-slice pie: top1, top2, top3, rest
+            rest_amt = max(total - top3_amt, 0.0)
+            pie_labels = []
+            pie_values = []
+            pie_colors = [BRAND_COLORS["blue"], BRAND_COLORS["blue2"], BRAND_COLORS["green"], BRAND_COLORS["aqua"]]
+
+            for u, amt in top3.items():
+                pie_labels.append(u)
+                pie_values.append(float(amt))
+
+            pie_labels.append("Everyone else")
+            pie_values.append(rest_amt)
+
+            fig_pie = plt.figure(figsize=(7.2, 5.4))
             ax = plt.gca()
-            values = [top3_amt, max(total - top3_amt, 0)]
-            labels = ["Top 3 whales", "Everyone else"]
             ax.pie(
-                values,
-                labels=labels,
+                pie_values,
+                labels=pie_labels,
                 autopct="%1.0f%%",
                 startangle=90,
-                textprops={"color": "white"},
+                colors=pie_colors,
+                textprops={"color": "white", "fontsize": 10},
+                wedgeprops={"linewidth": 1, "edgecolor": (1, 1, 1, 0.12)},
             )
+            ax.set_title("Share of Total Earnings", pad=12, fontsize=13, color="white")
             ax.set_aspect("equal")
             style_dark_axes(ax)
             plt.tight_layout()
             st.pyplot(fig_pie, transparent=True)
 
-        # ---- Stacked bars: Top 3 by type (not by day) ----
+        # ---- STACKED BAR: Top 3 breakdown by Chat/Video/Gifts/Other (brand colors)
         with bar_col:
             top3_users = list(top3.index)
             df_top3 = df[df["user"].isin(top3_users)].copy()
 
-            # Ensure consistent order + columns
-            order_users = top3_users  # already sorted by total
+            order_users = top3_users
             type_order = ["Chat", "Video", "Gifts", "Other"]
 
             pivot = (
@@ -371,76 +383,36 @@ if df is not None:
                     pivot[t] = 0.0
             pivot = pivot[type_order]
 
-            fig_stack = plt.figure()
+            fig_stack = plt.figure(figsize=(8.2, 5.4))
             ax2 = plt.gca()
 
             bottom = None
-            for t in type_order:
+            for t, col in zip(type_order, STACK_COLORS):
                 vals = pivot[t].values
-                ax2.bar(pivot.index, vals, bottom=bottom, label=t)
+                ax2.bar(pivot.index, vals, bottom=bottom, label=t, color=col, edgecolor=(1, 1, 1, 0.12), linewidth=1)
                 bottom = vals if bottom is None else (bottom + vals)
 
-            ax2.set_title("Top 3 Whale Breakdown (This Period)")
+            ax2.set_title("Top 3 Breakdown by Type", pad=12, fontsize=13, color="white")
             ax2.set_xlabel("Whales")
             ax2.set_ylabel("Credits ($)")
-            ax2.legend()
+
+            # Legend style
+            leg = ax2.legend(frameon=True, fontsize=9)
+            leg.get_frame().set_facecolor((0, 0, 0, 0))
+            leg.get_frame().set_edgecolor((1, 1, 1, 0.18))
+
             style_dark_axes(ax2)
             plt.tight_layout()
             st.pyplot(fig_stack, transparent=True)
 
         st.markdown("</div>", unsafe_allow_html=True)
 
-    # =========================
-    # OPTIONAL: Visual “Before” (daily feels random) + “After” (whales)
-    # Still product-y, but not overwhelming.
-    # =========================
-    st.write("")
-    st.markdown("<div class='card'>", unsafe_allow_html=True)
-    st.markdown("### Visuals")
-    st.markdown("<div class='tiny'>AFTER: whales fund the business • BEFORE: earnings feel random</div>", unsafe_allow_html=True)
-    st.markdown("<hr class='hr'/>", unsafe_allow_html=True)
-
-    v1, v2 = st.columns([1, 1], gap="large")
-
-    # AFTER bar (top 10)
-    with v1:
-        st.markdown("<div class='label'>AFTER</div>", unsafe_allow_html=True)
-        fig_after = plt.figure()
-        axa = plt.gca()
-        top10.plot(kind="bar", ax=axa)
-        axa.set_xlabel("User")
-        axa.set_ylabel("Total ($)")
-        style_dark_axes(axa)
-        plt.tight_layout()
-        st.pyplot(fig_after, transparent=True)
-
-    # BEFORE bar (daily totals)
-    with v2:
-        st.markdown("<div class='label'>BEFORE</div>", unsafe_allow_html=True)
-        daily = df.groupby("day")["amount"].sum().sort_index()
-        fig_before = plt.figure()
-        axb = plt.gca()
-        daily.plot(kind="bar", ax=axb)
-        axb.set_xlabel("Day")
-        axb.set_ylabel("Total ($)")
-        style_dark_axes(axb)
-        plt.tight_layout()
-        st.pyplot(fig_before, transparent=True)
-
-    # Downloads: images only (no deduped data download)
-    st.markdown("<hr class='hr'/>", unsafe_allow_html=True)
-    dl1, dl2 = st.columns(2)
-    dl1.download_button("Download AFTER (PNG)", fig_png(fig_after), "after_whaler.png", "image/png")
-    dl2.download_button("Download BEFORE (PNG)", fig_png(fig_before), "before_whaler.png", "image/png")
-
-    st.markdown("</div>", unsafe_allow_html=True)
-
 else:
     st.write("")
     st.markdown("<div class='card'>", unsafe_allow_html=True)
     st.markdown("### Ready when you are.")
     st.markdown(
-        "<div class='small'>Drop a CSV to see your <b>whale ranking</b>, your <b>revenue concentration</b>, and the visuals that make it click.</div>",
+        "<div class='small'>Drop a CSV to reveal your whale concentration and the small group fueling your momentum.</div>",
         unsafe_allow_html=True,
     )
     st.markdown("</div>", unsafe_allow_html=True)
