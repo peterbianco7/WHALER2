@@ -93,7 +93,6 @@ def money_to_float(x):
     if pd.isna(x):
         return 0.0
     s = str(x).strip().replace("$", "").replace(",", "")
-    # handle parentheses for negatives e.g. (12.34)
     if s.startswith("(") and s.endswith(")"):
         s = "-" + s[1:-1]
     try:
@@ -107,9 +106,7 @@ def safe_str(x):
     return str(x).strip()
 
 def extract_user(description: str) -> str:
-    """
-    House rule: first word in Description is the user name.
-    """
+    """House rule: first word in Description is the user name."""
     if not isinstance(description, str) or not description.strip():
         return "Unknown"
     return description.strip().split(" ")[0]
@@ -164,10 +161,7 @@ def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
     return d[["Date", "Description", "Credits", "Debits"]]
 
 def dedupe(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    House rule: dedupe transactions across files by composite key:
-    Date + Description + Credits + Debits
-    """
+    """House rule: dedupe by Date + Description + Credits + Debits."""
     d = df.copy()
     d["__key__"] = (
         d["Date"].dt.strftime("%Y-%m-%d %H:%M:%S").fillna("")
@@ -200,6 +194,7 @@ def build_charts(df: pd.DataFrame, top3: list[str], top_user: str):
     # STACKED BAR: for top single user (infer type from Description)
     d = df.copy()
     desc = d["Description"].str.lower()
+
     d["Type"] = "Other"
     d.loc[desc.str.contains("video", na=False), "Type"] = "Video"
     d.loc[desc.str.contains("chat", na=False) | desc.str.contains("message", na=False), "Type"] = "Chat"
@@ -208,6 +203,13 @@ def build_charts(df: pd.DataFrame, top3: list[str], top_user: str):
     u = d[d["User"] == top_user].copy()
     u["Day"] = u["Date"].dt.date
     pivot = u.pivot_table(index="Day", columns="Type", values="Credits", aggfunc="sum").fillna(0.0)
+
+    # Force the 4 categories to always exist and stay in this order
+    wanted = ["Chat", "Video", "Gift", "Other"]
+    for col in wanted:
+        if col not in pivot.columns:
+            pivot[col] = 0.0
+    pivot = pivot[wanted]
 
     stacked_fig = plt.figure()
     ax2 = stacked_fig.add_subplot(111)
@@ -227,7 +229,7 @@ def build_charts(df: pd.DataFrame, top3: list[str], top_user: str):
         ax2.set_title(f"Top Whale Breakdown (Daily) — {top_user}")
         ax2.set_xlabel("Day")
         ax2.set_ylabel("Credits ($)")
-        ax2.tick_params(axis='x', rotation=45)
+        ax2.tick_params(axis="x", rotation=45)
         ax2.legend(pivot.columns.tolist(), loc="upper right")
 
     return pie_fig, stacked_fig
@@ -240,22 +242,19 @@ def load_csv(file_bytes: bytes) -> pd.DataFrame:
     return df
 
 def demo_data() -> pd.DataFrame:
-    """So the app still looks 'finished' even without a file."""
     rng = pd.date_range(end=pd.Timestamp.now().normalize(), periods=14, freq="D")
     users = ["Victor", "Ossium", "Aaron", "Mike", "Sam", "Jay", "Chris", "Derek", "Nate", "Rob"]
     rows = []
     for day in rng:
         for i in range(20):
             u = users[int(abs(hash((day, i))) % len(users))]
-            amt = float((abs(hash((u, day, i))) % 1800) / 10.0)  # 0.0 -> 179.9
+            amt = float((abs(hash((u, day, i))) % 1800) / 10.0)
             kind = ["video", "chat", "gift", "other"][int(abs(hash((i, u))) % 4)]
             rows.append(
-                {
-                    "Date": day + pd.Timedelta(hours=int(abs(hash((u, i))) % 20)),
-                    "Description": f"{u} {kind} payment",
-                    "Credits": amt,
-                    "Debits": 0.0,
-                }
+                {"Date": day + pd.Timedelta(hours=int(abs(hash((u, i))) % 20)),
+                 "Description": f"{u} {kind} payment",
+                 "Credits": amt,
+                 "Debits": 0.0}
             )
     df = pd.DataFrame(rows)
     df = dedupe(df)
@@ -343,8 +342,6 @@ df = base_df.copy()
 df["User"] = df["Description"].apply(extract_user)
 
 total_credits = float(df["Credits"].sum())
-total_debits = float(df["Debits"].sum())
-net = total_credits - total_debits
 
 rank = (
     df.groupby("User", as_index=False)["Credits"]
@@ -359,17 +356,15 @@ top10 = rank.head(10).copy()
 top_user = top3[0] if len(top3) else "Unknown"
 
 # =========================
-# HERO METRICS (Money psychology > accounting)
+# HERO METRICS (Net Profit removed)
 # =========================
 m1, m2, m3, m4 = st.columns(4, gap="large")
-m1.metric("Total Earnings", f"${total_credits:,.2f}")
-m2.metric("Net Profit", f"${net:,.2f}")
-m3.metric("Transactions", f"{len(df):,}")
-m4.metric("Top Whale", top_user)
+m1.metric("Total Earnings this Period", f"${total_credits:,.2f}")
+m2.metric("Transactions", f"{len(df):,}")
+m3.metric("Top Whale", top_user)
+m4.metric("Top 3 Count", f"{min(3, len(rank))}")
 
 st.write("")
-
-# Extra whitespace = premium
 st.markdown("<div style='margin-top: 30px;'></div>", unsafe_allow_html=True)
 
 # =========================
@@ -414,25 +409,3 @@ with right:
         st.pyplot(stacked_fig, clear_figure=True, use_container_width=True)
 
     st.markdown("</div>", unsafe_allow_html=True)
-
-st.write("")
-
-# =========================
-# DOWNLOAD CLEANED / DEDUPED CSV
-# =========================
-st.markdown("<div class='wh-card'>", unsafe_allow_html=True)
-st.markdown("#### ⬇️ Download cleaned (deduped) data")
-st.caption("This is your clean truth file after the duplicate filter.")
-
-out = df.copy()
-out["Date"] = out["Date"].dt.strftime("%Y-%m-%d %H:%M:%S")
-csv_bytes = out.to_csv(index=False).encode("utf-8")
-
-st.download_button(
-    label="Download Deduped CSV",
-    data=csv_bytes,
-    file_name="WHALER_DEDUPED.csv",
-    mime="text/csv",
-)
-
-st.markdown("</div>", unsafe_allow_html=True)
