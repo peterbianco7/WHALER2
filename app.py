@@ -5,13 +5,11 @@ import streamlit as st
 
 # =========================
 # WHALER — V1 (polished master)
-# CSV upload → whale ranking → whale impact (core visuals)
 # =========================
 
 st.set_page_config(page_title="WHALER", layout="wide")
 
 # ---------- Brand Palette ----------
-# blue, slightly less blue, green, aqua
 BRAND_COLORS = {
     "blue": "#2F80ED",
     "blue2": "#56A0FF",
@@ -136,13 +134,11 @@ def currency(x: float) -> str:
     return f"${x:,.2f}"
 
 def extract_user(description: str) -> str:
-    # First token from Description
     if not isinstance(description, str) or not description.strip():
         return "Unknown"
     return description.strip().split(" ")[0]
 
 def classify_type(description: str) -> str:
-    # Simple classifier from Description text
     s = str(description).lower()
     if "video" in s or "facetime" in s:
         return "Video"
@@ -172,28 +168,19 @@ def kpi_card(label, value, note=None):
     """
 
 def style_dark_axes(ax):
-    # Transparent backgrounds so the page gradient shows through
     ax.set_facecolor((0, 0, 0, 0))
     ax.figure.patch.set_facecolor((0, 0, 0, 0))
-    # Ticks/labels readable on dark background
     ax.tick_params(colors="white")
     ax.xaxis.label.set_color("white")
     ax.yaxis.label.set_color("white")
     ax.title.set_color("white")
-    # Subtle spines
     for spine in ax.spines.values():
         spine.set_color((1, 1, 1, 0.18))
-
-def fig_png(fig):
-    buf = io.BytesIO()
-    fig.savefig(buf, format="png", bbox_inches="tight", dpi=200, transparent=True)
-    buf.seek(0)
-    return buf
 
 def demo_df() -> pd.DataFrame:
     data = [
         ("2026-02-01", "victor chat", "$35.00", ""),
-        ("2026-02-01", "victor chat", "$35.00", ""),  # duplicate example
+        ("2026-02-01", "victor chat", "$35.00", ""),
         ("2026-02-01", "victor other", "$459.00", ""),
         ("2026-02-02", "Ossium chat", "$120.00", ""),
         ("2026-02-02", "Ossium gift", "$45.00", ""),
@@ -279,9 +266,15 @@ if df is not None:
     total_whales = int(whales.shape[0])
     transactions = int(post)
 
-    top1_amt = float(top3.iloc[0]) if len(top3) else 0.0
-    top3_amt = float(top3.sum()) if len(top3) else 0.0
-    top3_pct = (top3_amt / total * 100.0) if total > 0 else 0.0
+    # "continue at this rate" projections using inclusive date-range days
+    min_d = pd.to_datetime(df["day"]).min()
+    max_d = pd.to_datetime(df["day"]).max()
+    days_span = int((max_d - min_d).days) + 1 if pd.notna(min_d) and pd.notna(max_d) else 1
+    days_span = max(days_span, 1)
+
+    daily_avg = total / days_span
+    monthly_proj = daily_avg * 30
+    yearly_proj = daily_avg * 365
 
     # ---------- KPI row ----------
     st.write("")
@@ -292,66 +285,65 @@ if df is not None:
     k1.markdown(kpi_card("Total Earnings this Period", currency(total)), unsafe_allow_html=True)
     k2.markdown(kpi_card("Transactions", f"{transactions:,}"), unsafe_allow_html=True)
     k3.markdown(kpi_card("Total Whales", f"{total_whales:,}"), unsafe_allow_html=True)
-    k4.markdown(kpi_card("Top 3 Share", f"{top3_pct:.0f}%"), unsafe_allow_html=True)
+    k4_value = f"${(top3.sum() / total * 100):.0f}%" if total > 0 and len(top3) else "0%"
+    k4.markdown(kpi_card("Top 3 Share", f"{(top3.sum() / total * 100):.0f}%"), unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
     st.write("")
-    left, right = st.columns([1, 1], gap="large")
 
     # =========================
-    # LEFT: Whale Ranking
+    # FULL ROW: Whale Ranking
     # =========================
-    with left:
-        st.markdown("<div class='card'>", unsafe_allow_html=True)
-        st.markdown("### 🏆 Whale Ranking (Top 10)")
-        st.markdown(
-            "<div class='tiny'>Your biggest supporters aren’t random — this is the short list driving your totals.</div>",
-            unsafe_allow_html=True,
-        )
-        st.markdown("<hr class='hr'/>", unsafe_allow_html=True)
+    st.markdown("<div class='card'>", unsafe_allow_html=True)
+    st.markdown("### 🏆 Whale Ranking (Top 10)")
 
-        if len(top10) == 0:
-            st.info("No earnings found after cleaning.")
-        else:
-            for i, (u, amt) in enumerate(top10.items(), start=1):
-                row_html = f"""
-                <div class="rank-row {'blur' if (blur_ranks and i >= 4) else ''}">
-                  <div class="rank-left">
-                    <div class="rank-num">{i}</div>
-                    <div style="font-weight:720;">{u}</div>
-                  </div>
-                  <div style="font-weight:780;">{currency(float(amt))}</div>
-                </div>
-                """
-                st.markdown(row_html, unsafe_allow_html=True)
+    # 3 small boxes above the Top 10 list
+    a1, a2, a3 = st.columns(3)
+    a1.markdown(kpi_card("Daily Avg (at this rate)", currency(daily_avg)), unsafe_allow_html=True)
+    a2.markdown(kpi_card("Monthly Avg (at this rate)", currency(monthly_proj)), unsafe_allow_html=True)
+    a3.markdown(kpi_card("Yearly Avg (at this rate)", currency(yearly_proj)), unsafe_allow_html=True)
 
-            if blur_ranks:
-                st.markdown("<div class='lock'>🔒 Ranks 4–10 blurred (V2 tease)</div>", unsafe_allow_html=True)
+    st.markdown("<div class='tiny' style='margin-top:10px;'>Your biggest supporters aren’t random — this is the short list driving your totals.</div>", unsafe_allow_html=True)
+    st.markdown("<hr class='hr'/>", unsafe_allow_html=True)
 
-        st.markdown("</div>", unsafe_allow_html=True)
+    if len(top10) == 0:
+        st.info("No earnings found after cleaning.")
+    else:
+        for i, (u, amt) in enumerate(top10.items(), start=1):
+            row_html = f"""
+            <div class="rank-row {'blur' if (blur_ranks and i >= 4) else ''}">
+              <div class="rank-left">
+                <div class="rank-num">{i}</div>
+                <div style="font-weight:720;">{u}</div>
+              </div>
+              <div style="font-weight:780;">{currency(float(amt))}</div>
+            </div>
+            """
+            st.markdown(row_html, unsafe_allow_html=True)
+
+        if blur_ranks:
+            st.markdown("<div class='lock'>🔒 Ranks 4–10 blurred (V2 tease)</div>", unsafe_allow_html=True)
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    st.write("")
 
     # =========================
-    # RIGHT: Whale Impact (larger charts + brand colors + fixed legend)
+    # NEXT ROW: Whale Impact (two charts)
     # =========================
-    with right:
-        st.markdown("<div class='card'>", unsafe_allow_html=True)
-        st.markdown("### 📊 Whale Impact")
-        st.markdown(
-            "<div class='tiny'>A small handful of people account for a big share of what you earned — and this shows exactly how.</div>",
-            unsafe_allow_html=True,
-        )
-        st.markdown("<hr class='hr'/>", unsafe_allow_html=True)
+    st.markdown("<div class='card'>", unsafe_allow_html=True)
+    st.markdown("### 📊 Whale Impact")
+    st.markdown(
+        "<div class='tiny'>A small handful of people account for a big share of what you earned — and this shows exactly how.</div>",
+        unsafe_allow_html=True,
+    )
+    st.markdown("<hr class='hr'/>", unsafe_allow_html=True)
 
-        # Punchy glance stats
-        s1, s2, s3 = st.columns([1, 1, 1])
-        s1.markdown(kpi_card("Top 1", currency(top1_amt)), unsafe_allow_html=True)
-        s2.markdown(kpi_card("Top 3 Total", currency(top3_amt)), unsafe_allow_html=True)
-        s3.markdown(kpi_card("Top 3 Share", f"{top3_pct:.0f}%"), unsafe_allow_html=True)
+    pie_col, bar_col = st.columns([1.1, 1.4], gap="large")
 
-        st.markdown("<hr class='hr'/>", unsafe_allow_html=True)
-
-        # Row layout (bigger visuals)
-        # PIE: Top1 / Top2 / Top3 / Everyone else
+    # PIE: Top1 / Top2 / Top3 / Everyone else
+    with pie_col:
+        top3_amt = float(top3.sum()) if len(top3) else 0.0
         rest_amt = max(total - top3_amt, 0.0)
         pie_labels = list(top3.index) + ["Everyone else"]
         pie_values = [float(v) for v in top3.values] + [rest_amt]
@@ -374,9 +366,8 @@ if df is not None:
         plt.tight_layout()
         st.pyplot(fig_pie, transparent=True)
 
-        st.markdown("<hr class='hr'/>", unsafe_allow_html=True)
-
-        # STACKED BAR: Top 3 breakdown by type
+    # STACKED BAR: Top 3 breakdown by type
+    with bar_col:
         top3_users = list(top3.index)
         df_top3 = df[df["user"].isin(top3_users)].copy()
 
@@ -411,7 +402,7 @@ if df is not None:
         ax2.set_xlabel("Whales")
         ax2.set_ylabel("Credits ($)")
 
-        # Legend: readable on dark background + not clipped
+        # Legend fix
         leg = ax2.legend(
             loc="upper center",
             bbox_to_anchor=(0.5, 1.20),
@@ -428,12 +419,10 @@ if df is not None:
             text.set_color("white")
 
         style_dark_axes(ax2)
-
-        # Leave space for the legend so it doesn't get cut off
         plt.tight_layout(rect=[0, 0, 1, 0.90])
         st.pyplot(fig_stack, transparent=True)
 
-        st.markdown("</div>", unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 
 else:
     st.write("")
