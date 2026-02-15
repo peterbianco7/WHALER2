@@ -19,16 +19,9 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-      /* App background + base typography (Apple-clean) */
-      .stApp {
-        background: #0b1020;
-        color: #e8eeff;
-      }
-
-      /* Remove extra top padding */
+      .stApp { background: #0b1020; color: #e8eeff; }
       .block-container { padding-top: 1.2rem; }
 
-      /* Cards */
       .wh-card {
         background: rgba(255,255,255,0.06);
         border: 1px solid rgba(255,255,255,0.10);
@@ -49,7 +42,6 @@ st.markdown(
         margin-right: 6px;
       }
 
-      /* HERO TYPE: bigger + Apple-ish tight tracking */
       .wh-title {
         font-size: 48px;
         font-weight: 900;
@@ -63,21 +55,14 @@ st.markdown(
         margin-top: 0;
       }
 
-      /* Make Streamlit widgets darker */
-      .stTextInput, .stFileUploader, .stSelectbox, .stSlider { background: transparent; }
       [data-testid="stFileUploader"] section {
         border-radius: 16px;
         border: 1px dashed rgba(255,255,255,0.25);
         background: rgba(255,255,255,0.04);
       }
 
-      /* Dataframe */
-      .stDataFrame {
-        border-radius: 14px;
-        overflow: hidden;
-      }
+      .stDataFrame { border-radius: 14px; overflow: hidden; }
 
-      /* Hide Streamlit footer/header */
       footer {visibility: hidden;}
       header {visibility: hidden;}
     </style>
@@ -89,7 +74,6 @@ st.markdown(
 # HELPERS
 # =========================
 def money_to_float(x):
-    """Accepts $ strings, commas, blanks; returns float."""
     if pd.isna(x):
         return 0.0
     s = str(x).strip().replace("$", "").replace(",", "")
@@ -106,17 +90,11 @@ def safe_str(x):
     return str(x).strip()
 
 def extract_user(description: str) -> str:
-    """House rule: first word in Description is the user name."""
     if not isinstance(description, str) or not description.strip():
         return "Unknown"
     return description.strip().split(" ")[0]
 
 def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Maps common export column names into:
-      Date, Description, Credits, Debits
-    If a single Amount column exists, it will split into Credits/Debits.
-    """
     d = df.copy()
     d.columns = [c.strip() for c in d.columns]
 
@@ -161,7 +139,6 @@ def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
     return d[["Date", "Description", "Credits", "Debits"]]
 
 def dedupe(df: pd.DataFrame) -> pd.DataFrame:
-    """House rule: dedupe by Date + Description + Credits + Debits."""
     d = df.copy()
     d["__key__"] = (
         d["Date"].dt.strftime("%Y-%m-%d %H:%M:%S").fillna("")
@@ -169,70 +146,97 @@ def dedupe(df: pd.DataFrame) -> pd.DataFrame:
         + "||" + d["Credits"].round(2).astype(str)
         + "||" + d["Debits"].round(2).astype(str)
     )
-    d = d.drop_duplicates(subset="__key__", keep="first").drop(columns=["__key__"])
-    return d
+    return d.drop_duplicates(subset="__key__", keep="first").drop(columns=["__key__"])
 
-def build_charts(df: pd.DataFrame, top3: list[str], top_user: str):
-    """Returns (pie_fig, stacked_fig) using matplotlib."""
+def add_type_column(d: pd.DataFrame) -> pd.DataFrame:
+    """Infer Type from Description; always one of Chat/Video/Gift/Other."""
+    x = d.copy()
+    desc = x["Description"].str.lower()
+    x["Type"] = "Other"
+    x.loc[desc.str.contains("video", na=False), "Type"] = "Video"
+    x.loc[desc.str.contains("chat", na=False) | desc.str.contains("message", na=False), "Type"] = "Chat"
+    x.loc[desc.str.contains("gift", na=False), "Type"] = "Gift"
+    return x
 
-    # PIE: % contribution of top 3 to total credits
+def build_pie(df: pd.DataFrame, top3: list[str]):
     top3_df = df[df["User"].isin(top3)].groupby("User", as_index=False)["Credits"].sum()
     top3_df["User"] = pd.Categorical(top3_df["User"], categories=top3, ordered=True)
     top3_df = top3_df.sort_values("User")
+
     pie_vals = top3_df["Credits"].tolist()
     pie_labels = top3_df["User"].tolist()
 
-    pie_fig = plt.figure()
-    ax = pie_fig.add_subplot(111)
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
     if sum(pie_vals) <= 0:
         ax.text(0.5, 0.5, "No credits found for Top 3.", ha="center", va="center")
         ax.axis("off")
     else:
         ax.pie(pie_vals, labels=pie_labels, autopct="%1.1f%%", startangle=90)
         ax.set_title("Top 3 Whales: % of Total Earnings")
+    return fig
 
-    # STACKED BAR: for top single user (infer type from Description)
-    d = df.copy()
-    desc = d["Description"].str.lower()
+def build_top3_breakdown(df: pd.DataFrame, top3: list[str]):
+    """
+    Stacked bar: each bar is a Top 3 whale.
+    Segments: Chat/Video/Gift/Other (total for period).
+    Returns (fig, table_df).
+    """
+    d = add_type_column(df)
 
-    d["Type"] = "Other"
-    d.loc[desc.str.contains("video", na=False), "Type"] = "Video"
-    d.loc[desc.str.contains("chat", na=False) | desc.str.contains("message", na=False), "Type"] = "Chat"
-    d.loc[desc.str.contains("gift", na=False), "Type"] = "Gift"
+    # Aggregate credits by User + Type
+    agg = (
+        d[d["User"].isin(top3)]
+        .groupby(["User", "Type"], as_index=False)["Credits"]
+        .sum()
+    )
 
-    u = d[d["User"] == top_user].copy()
-    u["Day"] = u["Date"].dt.date
-    pivot = u.pivot_table(index="Day", columns="Type", values="Credits", aggfunc="sum").fillna(0.0)
-
-    # Force the 4 categories to always exist and stay in this order
     wanted = ["Chat", "Video", "Gift", "Other"]
+
+    # Pivot to wide table: rows = users, cols = types
+    pivot = agg.pivot_table(index="User", columns="Type", values="Credits", aggfunc="sum").fillna(0.0)
+
+    # Force columns & order
     for col in wanted:
         if col not in pivot.columns:
             pivot[col] = 0.0
     pivot = pivot[wanted]
 
-    stacked_fig = plt.figure()
-    ax2 = stacked_fig.add_subplot(111)
+    # Keep user order
+    pivot.index = pd.CategoricalIndex(pivot.index, categories=top3, ordered=True)
+    pivot = pivot.sort_index()
+
+    # Add Total column for display
+    table_df = pivot.copy()
+    table_df["Total"] = table_df.sum(axis=1)
+    table_df = table_df.reset_index().rename(columns={"index": "User"})
+
+    # Build stacked bar chart
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+
     if pivot.empty:
-        ax2.text(0.5, 0.5, "No data for top user.", ha="center", va="center")
-        ax2.axis("off")
-    else:
-        bottom = None
-        for col in pivot.columns:
-            if bottom is None:
-                ax2.bar(pivot.index.astype(str), pivot[col].values)
-                bottom = pivot[col].values
-            else:
-                ax2.bar(pivot.index.astype(str), pivot[col].values, bottom=bottom)
-                bottom = bottom + pivot[col].values
+        ax.text(0.5, 0.5, "No data for Top 3 whales.", ha="center", va="center")
+        ax.axis("off")
+        return fig, table_df
 
-        ax2.set_title(f"Top Whale Breakdown (Daily) — {top_user}")
-        ax2.set_xlabel("Day")
-        ax2.set_ylabel("Credits ($)")
-        ax2.tick_params(axis="x", rotation=45)
-        ax2.legend(pivot.columns.tolist(), loc="upper right")
+    xlabels = [str(u) for u in pivot.index.tolist()]
+    bottom = None
+    for col in wanted:
+        vals = pivot[col].values
+        if bottom is None:
+            ax.bar(xlabels, vals)
+            bottom = vals
+        else:
+            ax.bar(xlabels, vals, bottom=bottom)
+            bottom = bottom + vals
 
-    return pie_fig, stacked_fig
+    ax.set_title("Top 3 Whale Breakdown (This Period)")
+    ax.set_xlabel("Whales")
+    ax.set_ylabel("Credits ($)")
+    ax.legend(wanted, loc="upper right")
+
+    return fig, table_df
 
 @st.cache_data(show_spinner=False)
 def load_csv(file_bytes: bytes) -> pd.DataFrame:
@@ -243,10 +247,10 @@ def load_csv(file_bytes: bytes) -> pd.DataFrame:
 
 def demo_data() -> pd.DataFrame:
     rng = pd.date_range(end=pd.Timestamp.now().normalize(), periods=14, freq="D")
-    users = ["Victor", "Ossium", "Aaron", "Mike", "Sam", "Jay", "Chris", "Derek", "Nate", "Rob"]
+    users = ["Victor", "Ossium", "Dman219", "Aaron", "Mike", "Sam", "Jay", "Chris", "Derek", "Nate"]
     rows = []
     for day in rng:
-        for i in range(20):
+        for i in range(18):
             u = users[int(abs(hash((day, i))) % len(users))]
             amt = float((abs(hash((u, day, i))) % 1800) / 10.0)
             kind = ["video", "chat", "gift", "other"][int(abs(hash((i, u))) % 4)]
@@ -287,10 +291,7 @@ with st.sidebar:
 colA, colB = st.columns([0.7, 0.3], gap="large")
 with colA:
     st.markdown("<div class='wh-title'>WHALER</div>", unsafe_allow_html=True)
-    st.markdown(
-        "<div class='wh-sub'>Upload your earnings report → get whale clarity in seconds.</div>",
-        unsafe_allow_html=True,
-    )
+    st.markdown("<div class='wh-sub'>Upload your earnings report → get whale clarity in seconds.</div>", unsafe_allow_html=True)
 with colB:
     st.markdown(
         "<div class='wh-card' style='text-align:right;'>"
@@ -328,7 +329,7 @@ if base_df is None:
         "• Top 3 whales (visible)<br>"
         "• Ranks 4–10 blurred (tease V2)<br>"
         "• Pie chart: Top 3 % of total<br>"
-        "• Stacked daily chart for the #1 whale<br>"
+        "• Top 3 breakdown: Chat / Video / Gift / Other<br>"
         "</div>"
         "<div style='margin-top:10px; font-size:12px; color:rgba(232,238,255,0.6);'>"
         "Upload a CSV to see your real whales."
@@ -343,6 +344,9 @@ df["User"] = df["Description"].apply(extract_user)
 
 total_credits = float(df["Credits"].sum())
 
+# Total whales = unique users who contributed (credits > 0)
+total_whales = int(df.loc[df["Credits"] > 0, "User"].nunique())
+
 rank = (
     df.groupby("User", as_index=False)["Credits"]
     .sum()
@@ -353,16 +357,14 @@ rank["Rank"] = rank.index + 1
 
 top3 = rank.head(3)["User"].tolist()
 top10 = rank.head(10).copy()
-top_user = top3[0] if len(top3) else "Unknown"
 
 # =========================
-# HERO METRICS (Net Profit removed)
+# HERO METRICS
 # =========================
-m1, m2, m3, m4 = st.columns(4, gap="large")
+m1, m2, m3 = st.columns(3, gap="large")
 m1.metric("Total Earnings this Period", f"${total_credits:,.2f}")
 m2.metric("Transactions", f"{len(df):,}")
-m3.metric("Top Whale", top_user)
-m4.metric("Top 3 Count", f"{min(3, len(rank))}")
+m3.metric("Total Whales", f"{total_whales:,}")
 
 st.write("")
 st.markdown("<div style='margin-top: 30px;'></div>", unsafe_allow_html=True)
@@ -398,14 +400,24 @@ with left:
 with right:
     st.markdown("<div class='wh-card'>", unsafe_allow_html=True)
     st.markdown("#### 📊 Whale Impact")
-    st.caption("Pie: % of total from Top 3. Below: daily breakdown for the #1 whale.")
+    st.caption("Pie: % of total from Top 3. Below: Top 3 breakdown by Chat/Video/Gift/Other.")
 
-    pie_fig, stacked_fig = build_charts(df, top3=top3, top_user=top_user)
+    pie_fig = build_pie(df, top3=top3)
+    breakdown_fig, breakdown_table = build_top3_breakdown(df, top3=top3)
 
     c1, c2 = st.columns([0.45, 0.55], gap="large")
     with c1:
         st.pyplot(pie_fig, clear_figure=True, use_container_width=True)
     with c2:
-        st.pyplot(stacked_fig, clear_figure=True, use_container_width=True)
+        st.pyplot(breakdown_fig, clear_figure=True, use_container_width=True)
+
+    # Show exact totals table (clean + useful)
+    st.write("")
+    st.caption("Top 3 totals (this period):")
+    nice = breakdown_table.copy()
+    for col in ["Chat", "Video", "Gift", "Other", "Total"]:
+        if col in nice.columns:
+            nice[col] = nice[col].apply(lambda v: f"${float(v):,.2f}")
+    st.dataframe(nice, use_container_width=True, hide_index=True)
 
     st.markdown("</div>", unsafe_allow_html=True)
