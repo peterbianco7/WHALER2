@@ -276,17 +276,15 @@ if df is not None:
     monthly_proj = daily_avg * 30
     yearly_proj = daily_avg * 365
 
-    # ---------- KPI row ----------
+    # ---------- KPI row (Top 3 Share removed) ----------
     st.write("")
     st.markdown("<div class='card'>", unsafe_allow_html=True)
     st.markdown(f"<div class='tiny'>Source: <b>{source_label}</b> • Deduped: <b>{removed}</b> removed</div>", unsafe_allow_html=True)
 
-    k1, k2, k3, k4 = st.columns(4)
+    k1, k2, k3 = st.columns(3)
     k1.markdown(kpi_card("Total Earnings this Period", currency(total)), unsafe_allow_html=True)
     k2.markdown(kpi_card("Transactions", f"{transactions:,}"), unsafe_allow_html=True)
     k3.markdown(kpi_card("Total Whales", f"{total_whales:,}"), unsafe_allow_html=True)
-    k4_value = f"${(top3.sum() / total * 100):.0f}%" if total > 0 and len(top3) else "0%"
-    k4.markdown(kpi_card("Top 3 Share", f"{(top3.sum() / total * 100):.0f}%"), unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
     st.write("")
