@@ -4,13 +4,13 @@ import matplotlib.pyplot as plt
 import streamlit as st
 
 # =========================
-# WHALER — V1 (polished)
-# CSV → whale ranking → core visuals
+# WHALER — V1 (polished master)
+# CSV upload → whale ranking → whale impact (core visuals)
 # =========================
 
 st.set_page_config(page_title="WHALER", layout="wide")
 
-# ---------- Brand Palette (requested) ----------
+# ---------- Brand Palette ----------
 # blue, slightly less blue, green, aqua
 BRAND_COLORS = {
     "blue": "#2F80ED",
@@ -111,7 +111,7 @@ section[data-testid="stSidebar"] *{ color: rgba(255,255,255,0.86); }
   font-weight: 650; color: rgba(255,255,255,0.70);
 }
 
-/* Primary buttons */
+/* Buttons */
 button[kind="primary"]{
   border-radius: 999px !important;
   padding: 0.60rem 1.00rem !important;
@@ -136,11 +136,13 @@ def currency(x: float) -> str:
     return f"${x:,.2f}"
 
 def extract_user(description: str) -> str:
+    # First token from Description
     if not isinstance(description, str) or not description.strip():
         return "Unknown"
     return description.strip().split(" ")[0]
 
 def classify_type(description: str) -> str:
+    # Simple classifier from Description text
     s = str(description).lower()
     if "video" in s or "facetime" in s:
         return "Video"
@@ -170,14 +172,15 @@ def kpi_card(label, value, note=None):
     """
 
 def style_dark_axes(ax):
+    # Transparent backgrounds so the page gradient shows through
     ax.set_facecolor((0, 0, 0, 0))
     ax.figure.patch.set_facecolor((0, 0, 0, 0))
-
+    # Ticks/labels readable on dark background
     ax.tick_params(colors="white")
     ax.xaxis.label.set_color("white")
     ax.yaxis.label.set_color("white")
     ax.title.set_color("white")
-
+    # Subtle spines
     for spine in ax.spines.values():
         spine.set_color((1, 1, 1, 0.18))
 
@@ -260,12 +263,14 @@ if df is not None:
     df = df.dropna(subset=["dt"])
     df["day"] = df["dt"].dt.date
 
+    # Deduplicate: Date + Description + Credits + Debits (if present)
     df["dedupe_key"] = make_dedupe_key(df)
     pre = len(df)
     df = df.drop_duplicates("dedupe_key")
     post = len(df)
     removed = pre - post
 
+    # Metrics
     total = float(df["amount"].sum())
     whales = df.groupby("user")["amount"].sum().sort_values(ascending=False)
     top10 = whales.head(10)
@@ -299,7 +304,10 @@ if df is not None:
     with left:
         st.markdown("<div class='card'>", unsafe_allow_html=True)
         st.markdown("### 🏆 Whale Ranking (Top 10)")
-        st.markdown("<div class='tiny'>Your top supporters aren’t random — this is the short list that’s driving your totals.</div>", unsafe_allow_html=True)
+        st.markdown(
+            "<div class='tiny'>Your biggest supporters aren’t random — this is the short list driving your totals.</div>",
+            unsafe_allow_html=True,
+        )
         st.markdown("<hr class='hr'/>", unsafe_allow_html=True)
 
         if len(top10) == 0:
@@ -323,87 +331,107 @@ if df is not None:
         st.markdown("</div>", unsafe_allow_html=True)
 
     # =========================
-    # RIGHT: Whale Impact (bigger charts + brand colors)
+    # RIGHT: Whale Impact (larger charts + brand colors + fixed legend)
     # =========================
     with right:
         st.markdown("<div class='card'>", unsafe_allow_html=True)
         st.markdown("### 📊 Whale Impact")
-        st.markdown("<div class='tiny'>This is the story: a small handful of people account for a large share of what you earned.</div>", unsafe_allow_html=True)
+        st.markdown(
+            "<div class='tiny'>A small handful of people account for a big share of what you earned — and this shows exactly how.</div>",
+            unsafe_allow_html=True,
+        )
         st.markdown("<hr class='hr'/>", unsafe_allow_html=True)
 
-        # Make charts larger by giving them more relative width and bigger figsize
-        pie_col, bar_col = st.columns([1.15, 1.45], gap="medium")
+        # Punchy glance stats
+        s1, s2, s3 = st.columns([1, 1, 1])
+        s1.markdown(kpi_card("Top 1", currency(top1_amt)), unsafe_allow_html=True)
+        s2.markdown(kpi_card("Top 3 Total", currency(top3_amt)), unsafe_allow_html=True)
+        s3.markdown(kpi_card("Top 3 Share", f"{top3_pct:.0f}%"), unsafe_allow_html=True)
 
-        # ---- PIE: #1, #2, #3, Everyone else (4 cohesive colors)
-        with pie_col:
-            # Build 4-slice pie: top1, top2, top3, rest
-            rest_amt = max(total - top3_amt, 0.0)
-            pie_labels = []
-            pie_values = []
-            pie_colors = [BRAND_COLORS["blue"], BRAND_COLORS["blue2"], BRAND_COLORS["green"], BRAND_COLORS["aqua"]]
+        st.markdown("<hr class='hr'/>", unsafe_allow_html=True)
 
-            for u, amt in top3.items():
-                pie_labels.append(u)
-                pie_values.append(float(amt))
+        # Row layout (bigger visuals)
+        # PIE: Top1 / Top2 / Top3 / Everyone else
+        rest_amt = max(total - top3_amt, 0.0)
+        pie_labels = list(top3.index) + ["Everyone else"]
+        pie_values = [float(v) for v in top3.values] + [rest_amt]
+        pie_colors = [BRAND_COLORS["blue"], BRAND_COLORS["blue2"], BRAND_COLORS["green"], BRAND_COLORS["aqua"]]
 
-            pie_labels.append("Everyone else")
-            pie_values.append(rest_amt)
+        fig_pie = plt.figure(figsize=(10.0, 6.4))
+        ax = plt.gca()
+        ax.pie(
+            pie_values,
+            labels=pie_labels,
+            autopct="%1.0f%%",
+            startangle=90,
+            colors=pie_colors,
+            textprops={"color": "white", "fontsize": 11},
+            wedgeprops={"linewidth": 1, "edgecolor": (1, 1, 1, 0.12)},
+        )
+        ax.set_title("Share of Total Earnings", pad=14, fontsize=14, color="white")
+        ax.set_aspect("equal")
+        style_dark_axes(ax)
+        plt.tight_layout()
+        st.pyplot(fig_pie, transparent=True)
 
-            fig_pie = plt.figure(figsize=(7.2, 5.4))
-            ax = plt.gca()
-            ax.pie(
-                pie_values,
-                labels=pie_labels,
-                autopct="%1.0f%%",
-                startangle=90,
-                colors=pie_colors,
-                textprops={"color": "white", "fontsize": 10},
-                wedgeprops={"linewidth": 1, "edgecolor": (1, 1, 1, 0.12)},
+        st.markdown("<hr class='hr'/>", unsafe_allow_html=True)
+
+        # STACKED BAR: Top 3 breakdown by type
+        top3_users = list(top3.index)
+        df_top3 = df[df["user"].isin(top3_users)].copy()
+
+        type_order = ["Chat", "Video", "Gifts", "Other"]
+        pivot = (
+            df_top3.pivot_table(index="user", columns="type", values="amount", aggfunc="sum", fill_value=0.0)
+            .reindex(top3_users)
+        )
+        for t in type_order:
+            if t not in pivot.columns:
+                pivot[t] = 0.0
+        pivot = pivot[type_order]
+
+        fig_stack = plt.figure(figsize=(11.0, 6.0))
+        ax2 = plt.gca()
+
+        bottom = None
+        for t, col in zip(type_order, STACK_COLORS):
+            vals = pivot[t].values
+            ax2.bar(
+                pivot.index,
+                vals,
+                bottom=bottom,
+                label=t,
+                color=col,
+                edgecolor=(1, 1, 1, 0.12),
+                linewidth=1,
             )
-            ax.set_title("Share of Total Earnings", pad=12, fontsize=13, color="white")
-            ax.set_aspect("equal")
-            style_dark_axes(ax)
-            plt.tight_layout()
-            st.pyplot(fig_pie, transparent=True)
+            bottom = vals if bottom is None else (bottom + vals)
 
-        # ---- STACKED BAR: Top 3 breakdown by Chat/Video/Gifts/Other (brand colors)
-        with bar_col:
-            top3_users = list(top3.index)
-            df_top3 = df[df["user"].isin(top3_users)].copy()
+        ax2.set_title("Top 3 Breakdown by Type", pad=12, fontsize=14, color="white")
+        ax2.set_xlabel("Whales")
+        ax2.set_ylabel("Credits ($)")
 
-            order_users = top3_users
-            type_order = ["Chat", "Video", "Gifts", "Other"]
+        # Legend: readable on dark background + not clipped
+        leg = ax2.legend(
+            loc="upper center",
+            bbox_to_anchor=(0.5, 1.20),
+            ncol=4,
+            frameon=True,
+            fontsize=10,
+            handlelength=1.2,
+            columnspacing=1.2,
+            borderaxespad=0.0,
+        )
+        leg.get_frame().set_facecolor((0, 0, 0, 0))
+        leg.get_frame().set_edgecolor((1, 1, 1, 0.18))
+        for text in leg.get_texts():
+            text.set_color("white")
 
-            pivot = (
-                df_top3.pivot_table(index="user", columns="type", values="amount", aggfunc="sum", fill_value=0.0)
-                .reindex(order_users)
-            )
-            for t in type_order:
-                if t not in pivot.columns:
-                    pivot[t] = 0.0
-            pivot = pivot[type_order]
+        style_dark_axes(ax2)
 
-            fig_stack = plt.figure(figsize=(8.2, 5.4))
-            ax2 = plt.gca()
-
-            bottom = None
-            for t, col in zip(type_order, STACK_COLORS):
-                vals = pivot[t].values
-                ax2.bar(pivot.index, vals, bottom=bottom, label=t, color=col, edgecolor=(1, 1, 1, 0.12), linewidth=1)
-                bottom = vals if bottom is None else (bottom + vals)
-
-            ax2.set_title("Top 3 Breakdown by Type", pad=12, fontsize=13, color="white")
-            ax2.set_xlabel("Whales")
-            ax2.set_ylabel("Credits ($)")
-
-            # Legend style
-            leg = ax2.legend(frameon=True, fontsize=9)
-            leg.get_frame().set_facecolor((0, 0, 0, 0))
-            leg.get_frame().set_edgecolor((1, 1, 1, 0.18))
-
-            style_dark_axes(ax2)
-            plt.tight_layout()
-            st.pyplot(fig_stack, transparent=True)
+        # Leave space for the legend so it doesn't get cut off
+        plt.tight_layout(rect=[0, 0, 1, 0.90])
+        st.pyplot(fig_stack, transparent=True)
 
         st.markdown("</div>", unsafe_allow_html=True)
 
@@ -412,7 +440,7 @@ else:
     st.markdown("<div class='card'>", unsafe_allow_html=True)
     st.markdown("### Ready when you are.")
     st.markdown(
-        "<div class='small'>Drop a CSV to reveal your whale concentration and the small group fueling your momentum.</div>",
+        "<div class='small'>Drop a CSV to reveal your concentration and the small group fueling your momentum.</div>",
         unsafe_allow_html=True,
     )
     st.markdown("</div>", unsafe_allow_html=True)
